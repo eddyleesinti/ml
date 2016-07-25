@@ -1,0 +1,202 @@
+---
+output: pdf_document
+---
+# Prediction of Fitness Activity
+Author: Eddy Lee
+
+## Introduction
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### More Information on Background
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+Read more: http://groupware.les.inf.puc-rio.br/har#literature#ixzz4FNzjb3jx
+
+
+### Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+## Design and Development
+
+### Load Libraries
+```{r}
+library(caret)
+library(rpart)
+library(ggplot2)
+library(rattle)
+
+```
+
+### Load Data
+Both provided data sets are loaded in and initial cleansing of specific values indicating NA is identified and transformed into NA
+
+```{r cache=T}
+# Training Dataset
+data.training.original <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+
+# Final Validation Dataset
+data.validation.original <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!", ""))
+
+# Skimp through the basic info of the dataset
+
+dim(data.training.original)
+dim(data.validation.original)
+
+summary(data.training.original)
+summary(data.validation.original)
+
+```
+
+### Set Seed
+To assist in reproducibility, random seed is set at 9999.
+```{r}
+set.seed(9999)
+```
+
+### Remove unused columns
+Column 1 to 7 of the original data set is not candidates as co-variances, thus removed from downstream data sets.
+```{r cache=T}
+data.training.original <- data.training.original[,-c(1:7)]
+data.validation.original <- data.validation.original[,-c(1:7)]
+```
+
+### Remove columns where all values are NA
+Some columns are only filled with NA, thus removing them wouldn't affect predictability of the models.
+```{r cache=T}
+data.training.valid <- data.training.original[, colSums(is.na(data.training.original))==0]
+data.validation.valid <- data.validation.original[, colSums(is.na(data.validation.original))==0]
+
+dim(data.training.valid)
+dim(data.validation.valid)
+
+```
+
+
+The author decided to partition the training data set into a training and a test data set for cross validation purposes. Other cross validation techniques can be considered in the future such as k-Folds and LOOCV. This decision is due to the limitation of the author's available computing power.
+
+Training Data set: 70%
+Test Data set: 30%
+
+### Data Partitioning
+```{r cache=T}
+inTrain <- createDataPartition(y=data.training.valid$classe, p=0.70, list=FALSE)
+data.training.final <- data.training.valid[inTrain, ] 
+data.test.final <- data.training.valid[-inTrain, ]
+data.validation.final <- data.validation.valid
+
+dim(data.training.final)
+dim(data.test.final)
+dim(data.validation.final)
+```
+
+For the purposs of demonstration, a simple EDA with histogram is shown. Number of variables are many and thus techniques such as pair plots is not useful as it cluttered and unreadable.
+### Sample Exploratory Data Analysis
+```{r}
+qplot(data.training.final$classe, main = "Frequency Count of Classes in Training Set")
+```
+
+Distribution of Classe Factor Value seems quite consistent amongst B, C, D, E with significantly higher frequency for A.
+
+- exactly according to the specification (Class A)
+- throwing the elbows to the front (Class B)
+- lifting the dumbbell only halfway (Class C)
+- lowering the dumbbell only halfway (Class D)
+- throwing the hips to the front (Class E)
+
+The author chosen Decision Tree as the first modelling technique to apply because of its execution efficiency and reasonable good performance for non-linear datas.
+
+
+### Prediction Model 1: Decision Tree (RPART) 
+#### Training
+
+```{r  cache=T}
+rpart1 <- rpart(classe ~ ., data=data.training.final, method="class")
+```
+
+#### Visualization the trained resulting tree
+```{r  cache=T}
+fancyRpartPlot(rpart1)
+```
+
+#### Making prediction on Test Data set
+```{r  cache=T}
+rpart1.prediction<-predict(rpart1, newdata=data.test.final, type="class")
+```
+
+#### Checking Confusion Matrix of Test Prediction vs Test Actual
+```{r  cache=T}
+confusionMatrix(rpart1.prediction,data.test.final$classe)
+
+```
+
+Accuracy of Decision Tree on Test data set: 0.7459 with 95% CI : (0.726, 0.7651)
+                 
+
+### Prediction Model 2: Random Forest (RF)
+#### Training
+
+Initial attempt with the default train settings of caret rf resulted in extreme unresponsiveness from rstudio thus the author trimmed down the settngs as below:
+```{r cache=T}
+
+control <- trainControl(method="cv", number=2, classProbs = T)
+
+rf1 <- train(classe~., data=data.training.final, method="rf", prox=TRUE, trControl=control, tunelength=1)
+```
+
+#### Making prediction on Test Data set
+```{r  cache=T}
+rf1.prediction <-predict(rf1$finalModel, newdata=data.test.final, type="class")
+```
+
+#### Checking Confusion Matrix of Test Prediction vs Test Actual
+```{r  cache=T}
+confusionMatrix(rf1.prediction,data.test.final$classe)
+
+```
+
+Accuracy of Random Forests on Test data set: 0.9905 with 95% CI : (0.9877, 0.9928)
+
+### Selected Final Model to process Validation Data
+
+By comparing the predictive results from Model 1 (Decision Tree) and Model 2 (Random Forest), the author decided to use Model 2 to process the final validation set as its accuracy is much superior than Model 1.
+
+#### Making prediction on Validation Data set
+```{r  cache=T}
+rf1.validation.prediction <-predict(rf1, newdata=data.validation.final)
+```
+
+#### Generate Submisson Data
+```{r}
+answers <- as.vector(rf1.validation.prediction)
+
+pml_write_files = function(x) {
+    n = length(x)
+    for (i in 1:n) {
+        filename = paste0("problem_id_", i, ".txt")
+        write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, 
+            col.names = FALSE)
+    }
+}
+
+pml_write_files(answers)
+```
+
+
+### Additional Notes
+
+The author also intends to perform the process using other modelling techniques such as gbm, nb, preprocessing with pca, gam and so on, however, the available computing power is insufficient to complete these model processing within reasonable time.
+
+
+
+               
+               
