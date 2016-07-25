@@ -1,5 +1,5 @@
 ---
-output: pdf_document
+output: html_document
 ---
 # Prediction of Fitness Activity
 Author: Eddy Lee
